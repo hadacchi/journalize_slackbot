@@ -25,13 +25,22 @@ journalize_slackbot is a slackbot to journalize.
         <pre>python3 run.py</pre>
     </li>
     <li>
-        mention to your bot as follows
-        <pre>@botname from {ACCOUNT_RHS}{PRICE};{ACCOUNT_RHS}{PRICE} to {ACCOUNT_LHS}{PRICE}{ACCOUNT_LHS}{PRICE} for {DESCRIPTION}</pre>
+        store journal  
+        mention as follows
+        <pre>from {ACCOUNT_RHS}{PRICE};{ACCOUNT_RHS}{PRICE} to {ACCOUNT_LHS}{PRICE}{ACCOUNT_LHS}{PRICE} for {DESCRIPTION} on {DATE}</pre>
         <ul>
             <li>for example,
-                <pre>@botname from Cash100;TempPayment100 to OfficeSupply200 for notebook</pre>
+                <pre>from Cash100;TempPayment100 to OfficeSupply200 for notebook on yyyy/mm/dd</pre>
+            </li>
+            <li>
+            description and date are optional elements; random order is accepted.
             </li>
         </ul>
+    </li>
+    <li>
+        show journal as follow
+        <pre>view {DATE}</pre>
+        date is optional element.
     </li>
     <li>
         when you stop this slackbot, enter this command in the directory where the slackbot files are.
