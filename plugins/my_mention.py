@@ -10,9 +10,18 @@ from slackbot.bot import listen_to
 __version__ = '0.1.0'
 __author__  = 'hadacchi'
 
+# constant
+PID = '/home/hada/botshirabe/run.pid'
+
+# aname pattern
 apat = re.compile('(?P<val>\d+)$')
+# option pattern
+opat = re.compile(' (for|on) ')
+
 pid  = os.getpid()
-with open('run.pid','w') as f:
+if os.path.isfile(PID):
+    raise Exception('already started')
+with open(PID,'w') as f:
     f.write(str(pid))
 
 #@respond_to('mention', re.IGNORECASE)
@@ -24,8 +33,24 @@ with open('run.pid','w') as f:
 #    message.send('listen')
 #    message.reply('reply')
 
-@respond_to('from (.*) to (.*)')
-def journal_insert(message, from_str, todesc_str):
+@listen_to('^view')
+def view_journal(message):
+    text = message.body['text']
+    #message.send(body)
+    if text.find(' ')<0:
+        date = datetime.date.today()
+    else:
+        _,dstr = text.split(' ',1)
+        buf    = datetime.datetime.strptime(dstr,'%Y/%m/%d')
+        date   = buf.date()
+
+    # open DB session
+    db = kakeibohandler('kakeibo.db')
+    result = db.select_journal_by_date(date)
+    message.send(str(result))
+
+@listen_to('from (.*) to (.*)')
+def journal_insert(message, from_str, toopt_str):
     # parse message
     # accountとpriceのコンマ区切りは忘れそうなのでやめる
     flist = []
@@ -35,11 +60,16 @@ def journal_insert(message, from_str, todesc_str):
         val = int(mat.group())
         flist.append((acc,val))
 
-    if todesc_str.find(' for ')>0:
-        to_str, desc_str = todesc_str.split(' for ',1)
-    else:
-        to_str   = todesc_str
-        desc_str = None
+    buf = opat.split(toopt_str)
+    to_str   = buf[0]
+    desc_str = date = None
+    if len(buf)>1:
+        for v in zip(buf[1::2], buf[2::2]):
+            if v[0] == 'for':
+                desc_str = v[1]
+            elif v[0] == 'on':
+                x    = datetime.datetime.strptime(v[1],'%Y/%m/%d')
+                date = x.date()
 
     tlist = []
     for tstr in to_str.split(';'):
@@ -55,7 +85,7 @@ def journal_insert(message, from_str, todesc_str):
     db = kakeibohandler('kakeibo.db')
 
     # insert DB
-    tid = db.insert_journal(flist, tlist, desc_str)
+    tid = db.insert_journal(flist, tlist, desc_str, date)
 
     # show result
     message.send(str(db.select_journal_by_tid(tid)))
@@ -92,12 +122,15 @@ class kakeibohandler(object):
         else:
             return buf[0]
 
-    def insert_journal(self, flist, tlist, desc):
+    def insert_journal(self, flist, tlist, desc, date):
         # 重複排除のため集合内包を作ってからリスト化
         accs  = list({acc for acc,_ in flist + tlist})
         adict = self.get_acodes(accs)
         tid   = self.get_last_tid() + 1
-        today = datetime.date.today()
+        if date is None:
+            today = datetime.date.today()
+        else:
+            today = date
 
         # check same record
 
@@ -113,6 +146,12 @@ class kakeibohandler(object):
         if not self.connected():
             self.connect(self.db)
         self.cur.execute('select * from journal where transaction_id=?',(tid,))
+        return self.cur.fetchall()
+
+    def select_journal_by_date(self, date):
+        if not self.connected():
+            self.connect(self.db)
+        self.cur.execute('select * from journal where deal_date=?',(date,))
         return self.cur.fetchall()
 
     # account handling
