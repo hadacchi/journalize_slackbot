@@ -6,12 +6,17 @@ import re
 import sqlite3
 from slackbot.bot import respond_to
 from slackbot.bot import listen_to
+from slackbot.dispatcher import unicode_compact
+from slackbot.dispatcher import Message
+import sys
+sys.path.append('..')
+from privatedata import ch      # ch is dictionary from ch name to ch id
+from privatedata import DB  # db filename
+from privatedata import PID # path to pid file
 
-__version__ = '0.1.0'
+__version__ = '0.2.0'
 __author__  = 'hadacchi'
 
-# constant
-PID = '/home/hada/botshirabe/run.pid'
 
 # aname pattern
 apat = re.compile('(?P<val>\d+)$')
@@ -34,27 +39,44 @@ with open(PID,'w') as f:
 #    message.reply('reply')
 
 @listen_to('^view')
-def view_journal(message):
-    # TODO 表化
+def view(message):
     text = message.body['text']
     join = False
-    #message.send(body)
     if text.find(' ')<0:
+        # show journal today
         date = datetime.date.today()
     else:
         _,dstr = text.split(' ',1)
-        if dstr = 'T':
+        if dstr == 'T':
+            # inner join account name
             join = True
             date = datetime.date.today()
+        # for debug
+        #elif dstr == 'message':
+        #    message.send(str(dir(message)))
+        #    return
+        #elif dstr in dir(message):
+        #    message.send(str(eval('dir(message.'+dstr+')')))
+        #    return
         else:
+            # parse date to show journal
             buf  = datetime.datetime.strptime(dstr,'%Y/%m/%d')
             date = buf.date()
 
     # open DB session
-    # TODO 勘定科目コードを勘定科目名に当てて表示．SQLでできるはず
-    db = kakeibohandler('kakeibo.db')
+    db = kakeibohandler(DB)
     result = db.select_journal_by_date(date, join)
     message.send(str(result))
+
+class myMessage(Message):
+    @unicode_compact
+    def send_to_channel(self, text, channel, thread_ts=None):
+        self._client.rtm_send_message(channel, text, thread_ts=thread_ts)
+
+@listen_to('todo (.*)')
+def send_to_todo(message, todo_str):
+    mymsg = myMessage(message._client, message.body)
+    mymsg.send_to_channel(todo_str, ch['todo'])
 
 @listen_to('from (.*) to (.*)')
 def journal_insert(message, from_str, toopt_str):
@@ -89,19 +111,20 @@ def journal_insert(message, from_str, toopt_str):
         Exception('parse error')
 
     # open DB session
-    db = kakeibohandler('kakeibo.db')
+    db = kakeibohandler(DB)
 
     # insert DB
     tid = db.insert_journal(flist, tlist, desc_str, date)
 
     # show result
-    message.send(str(db.select_journal_by_tid(tid)))
+    message.reply(str(db.select_journal_by_tid(tid)), in_thread=True)
 
     #message.send('借方:{0}\n貸方:{1}'.format(str(flist),str(tlist)))
     #message.send(str(adict))
 
 class kakeibohandler(object):
     INNERJOIN = 'inner join account on journal.acode = account.rowid'
+    SELECTJOU = 'select * from journal'
 
     def __init__(self, fname):
         self.con = None
@@ -151,23 +174,20 @@ class kakeibohandler(object):
 
         return tid
 
-    def select_journal_by_tid(self, tid, join=False):
+    def select_journal(self, optionstr='', optionparam=None):
         if not self.connected():
             self.connect(self.db)
-        statement = 'select * from journal {0} where transaction_id=?'.format(
-                INNERJOIN if join else ''
-                )
-        self.cur.execute(statement,(tid,))
-        return self.cur.fetchall()
+        if optionparam is None:
+            self.cur.execute(self.SELECTJOU)
+        else:
+            self.cur.execute(self.SELECTJOU + optionstr, optionparam)
+            return self.cur.fetchall()
+
+    def select_journal_by_tid(self, tid, join=False):
+        return self.select_journal(' ' + (self.INNERJOIN if join else '') + ' where transaction_id=?', (tid,))
 
     def select_journal_by_date(self, date, join=False):
-        if not self.connected():
-            self.connect(self.db)
-        statement = 'select * from journal {0} where deal_date=?'.format(
-                INNERJOIN if join else ''
-                )
-        self.cur.execute(statement,(date,))
-        return self.cur.fetchall()
+        return self.select_journal(' ' + (self.INNERJOIN if join else '') + ' where deal_date=?', (date,))
 
     # account handling
     def acc_exists(self, aname):

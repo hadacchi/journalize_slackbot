@@ -1,5 +1,6 @@
 # coding: utf-8
 
+from datetime import datetime
 from slackbot.bot import Bot
 
 def main():
@@ -7,6 +8,6 @@ def main():
     b.run()
 
 if __name__ == '__main__':
-    print('start slackbot')
+    print(datetime.today(), 'start slackbot')
     main()
 
