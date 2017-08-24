@@ -35,18 +35,25 @@ with open(PID,'w') as f:
 
 @listen_to('^view')
 def view_journal(message):
+    # TODO 表化
     text = message.body['text']
+    join = False
     #message.send(body)
     if text.find(' ')<0:
         date = datetime.date.today()
     else:
         _,dstr = text.split(' ',1)
-        buf    = datetime.datetime.strptime(dstr,'%Y/%m/%d')
-        date   = buf.date()
+        if dstr = 'T':
+            join = True
+            date = datetime.date.today()
+        else:
+            buf  = datetime.datetime.strptime(dstr,'%Y/%m/%d')
+            date = buf.date()
 
     # open DB session
+    # TODO 勘定科目コードを勘定科目名に当てて表示．SQLでできるはず
     db = kakeibohandler('kakeibo.db')
-    result = db.select_journal_by_date(date)
+    result = db.select_journal_by_date(date, join)
     message.send(str(result))
 
 @listen_to('from (.*) to (.*)')
@@ -94,6 +101,8 @@ def journal_insert(message, from_str, toopt_str):
     #message.send(str(adict))
 
 class kakeibohandler(object):
+    INNERJOIN = 'inner join account on journal.acode = account.rowid'
+
     def __init__(self, fname):
         self.con = None
         self.cur = None
@@ -142,16 +151,22 @@ class kakeibohandler(object):
 
         return tid
 
-    def select_journal_by_tid(self, tid):
+    def select_journal_by_tid(self, tid, join=False):
         if not self.connected():
             self.connect(self.db)
-        self.cur.execute('select * from journal where transaction_id=?',(tid,))
+        statement = 'select * from journal {0} where transaction_id=?'.format(
+                INNERJOIN if join else ''
+                )
+        self.cur.execute(statement,(tid,))
         return self.cur.fetchall()
 
-    def select_journal_by_date(self, date):
+    def select_journal_by_date(self, date, join=False):
         if not self.connected():
             self.connect(self.db)
-        self.cur.execute('select * from journal where deal_date=?',(date,))
+        statement = 'select * from journal {0} where deal_date=?'.format(
+                INNERJOIN if join else ''
+                )
+        self.cur.execute(statement,(date,))
         return self.cur.fetchall()
 
     # account handling
