@@ -1,9 +1,10 @@
 # coding: utf-8
 
 import sqlite3
+from privatedata import DB # DB file name
 
 # journal
-with sqlite3.connect('kakeibo.db') as con:
+with sqlite3.connect(DB) as con:
     cur=con.cursor()
     cur.execute('drop table if exists account')
     # 自動採番するには int ではなく integer でないとダメ
