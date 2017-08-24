@@ -73,12 +73,12 @@ class myMessage(Message):
     def send_to_channel(self, text, channel, thread_ts=None):
         self._client.rtm_send_message(channel, text, thread_ts=thread_ts)
 
-@listen_to('todo (.*)')
+@listen_to('^todo (.*)')
 def send_to_todo(message, todo_str):
     mymsg = myMessage(message._client, message.body)
     mymsg.send_to_channel(todo_str, ch['todo'])
 
-@listen_to('from (.*) to (.*)')
+@listen_to('^from (.*) to (.*)')
 def journal_insert(message, from_str, toopt_str):
     # parse message
     # accountとpriceのコンマ区切りは忘れそうなのでやめる
