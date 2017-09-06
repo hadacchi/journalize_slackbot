@@ -1,0 +1,3 @@
+[submodule "plugins/texttables"]
+	path = plugins/texttables
+	url = https://github.com/hadacchi/texttables.git

@@ -1,14 +1,17 @@
 # coding: utf-8
 
 import datetime
+import io
 import os
 import re
 import sqlite3
+from texttables.dynamic import writer as tblwriter
 from slackbot.bot import respond_to
 from slackbot.bot import listen_to
 from slackbot.dispatcher import unicode_compact
 from slackbot.dispatcher import Message
 import sys
+
 sys.path.append('..')
 from privatedata import ch      # ch is dictionary from ch name to ch id
 from privatedata import DB  # db filename
@@ -38,50 +41,126 @@ with open(PID,'w') as f:
 #    message.send('listen')
 #    message.reply('reply')
 
+# strptime で使う文字列
+dfmt = {
+        8: '%Y%m%d',
+        6: '%y%m%d',
+        4: '%m%d',
+        }
+# re で使う文字列．セパレータが-とか:とか/とか揺れてても吸収する
+spat = '[^\d]*(?P<m>\d{1,2}).(?P<d>\d{1,2})[^\d]*'              #  3-5 chars    1/1 - 12/31
+mpat = '[^\d]*(?P<y>\d{2}).(?P<m>\d{1,2}).(?P<d>\d{1,2})[^\d]*' #  6-8 chars 17/1/1 - 17/12/31
+lpat = '[^\d]*(?P<y>\d{4}).(?P<m>\d{1,2}).(?P<d>\d{1,2})[^\d]*' # 8-10 chars 2017/1/1 - 2017/12/31
+
+def dstrtodt(dstr):
+    '色々なパターンの日付文字列をdatetimeオブジェクトにして返す'
+    # セパレータの有無を判定
+    if len(re.sub('\d','',dstr))>0:
+        # セパレータがある場合のマッチング文字列の場合分け
+        if len(dstr) <6:
+            pats = [spat,]
+        elif len(dstr)<8:
+            pats = [mpat,]
+        elif len(dstr)==8:
+            pats = [mpat,lpat,]
+        elif len(dstr)<11:
+            pats = [lpat,]
+        else:
+            pats = []
+
+        for p in pats:
+            cpat = re.compile(p)
+            mat  = cpat.search(dstr)
+            if mat:
+                # 数字のみ連結
+                nstr = ''.join(map(lambda x: '{0:02d}'.format(int(x)), mat.groups()))
+                break
+        else:
+            # for の else. マッチする文字列なし
+            raise Exception('invalid date format')
+    else:
+        # 全部数字
+        nstr = dstr
+    if len(nstr) in dfmt:
+        now = datetime.datetime.today()
+        t = datetime.datetime.strptime(nstr, dfmt[len(nstr)])
+        if len(nstr)<5:
+            t = t.replace(year=now.year)
+    else:
+        raise Exception('invalid data format')
+    return t
+
 @listen_to('^view')
 def view(message):
+    '情報をチャットに書き出す'
     text = message.body['text']
     join = False
-    if text.find(' ')<0:
-        # show journal today
-        date = datetime.date.today()
-    else:
-        _,dstr = text.split(' ',1)
-        if dstr == 'T':
-            # inner join account name
-            join = True
-            date = datetime.date.today()
-        # for debug
-        #elif dstr == 'message':
-        #    message.send(str(dir(message)))
-        #    return
-        #elif dstr in dir(message):
-        #    message.send(str(eval('dir(message.'+dstr+')')))
-        #    return
-        else:
-            # parse date to show journal
-            buf  = datetime.datetime.strptime(dstr,'%Y/%m/%d')
-            date = buf.date()
+    date = datetime.date.today()
+    if text.find(' ')>0:
+        dstrlist= text.split(' ')
+        for dstr in dstrlist[1:]:
+            if dstr == 'T':
+                # inner join account name
+                join = True
+            elif dstr == 'account':
+                db = kakeibohandler(DB)
+                message.send(str(db.get_accounts()))
+                return
+            # for debug
+            #elif dstr == 'message':
+            #    message.send(str(dir(message)))
+            #    return
+            #elif dstr in dir(message):
+            #    message.send(str(eval('dir(message.'+dstr+')')))
+            #    return
+            else:
+                # parse date to show journal
+                buf  = dstrtodt(dstr)
+                #buf  = datetime.datetime.strptime(dstr,'%Y/%m/%d')
+                date = buf.date()
 
     # open DB session
     db = kakeibohandler(DB)
-    result = db.select_journal_by_date(date, join)
-    message.send(str(result))
+    result = db.select_journal_by_date(date, True)
+    'result is  tid, date, acode, price, LorR, desc, aname'
+    'fields are tid, date, account, price L, price R, desc'
+    data   = [list(map(str,[
+                            r[0],
+                            r[1],
+                            r[-1],
+                            '' if r[4] else r[3],
+                            r[3] if r[4] else '',
+                            r[5]
+                            ])) for r in result]
+    buf = io.StringIO()
+    #message.send(str(data))
+    #with tblwriter(buf, ['','','','','','']) as wobj:
+    with tblwriter(buf, ['>','<','<','>','>','<']) as wobj:
+        wobj.writeheader(['', 'date', 'account', 'price LHS', 'price RHS', 'description'])
+        wobj.writerows(data)
+
+    out = '```'
+    out += buf.getvalue()
+    out += '```'
+    message.send(out)
 
 class myMessage(Message):
+    '''slackbotのMessageクラスは他のチャットに書き出せないので
+    チャネルを指定して書き出すためのメソッドを追加した継承クラスを作った
+    '''
     @unicode_compact
     def send_to_channel(self, text, channel, thread_ts=None):
         self._client.rtm_send_message(channel, text, thread_ts=thread_ts)
 
 @listen_to('^todo (.*)')
 def send_to_todo(message, todo_str):
+    'todo チャネルにメッセージを転記する'
     mymsg = myMessage(message._client, message.body)
     mymsg.send_to_channel(todo_str, ch['todo'])
 
 @listen_to('^from (.*) to (.*)')
 def journal_insert(message, from_str, toopt_str):
-    # parse message
-    # accountとpriceのコンマ区切りは忘れそうなのでやめる
+    '仕訳情報を展開して仕訳DBに追記する'
     flist = []
     for fstr in from_str.split(';'):
         mat = apat.search(fstr)
@@ -97,7 +176,8 @@ def journal_insert(message, from_str, toopt_str):
             if v[0] == 'for':
                 desc_str = v[1]
             elif v[0] == 'on':
-                x    = datetime.datetime.strptime(v[1],'%Y/%m/%d')
+                #x    = datetime.datetime.strptime(v[1],'%Y/%m/%d')
+                x    = dstrtodt(v[1])
                 date = x.date()
 
     tlist = []
@@ -119,10 +199,9 @@ def journal_insert(message, from_str, toopt_str):
     # show result
     message.reply(str(db.select_journal_by_tid(tid)), in_thread=True)
 
-    #message.send('借方:{0}\n貸方:{1}'.format(str(flist),str(tlist)))
-    #message.send(str(adict))
 
 class kakeibohandler(object):
+    '仕訳DB，勘定科目DBの操作をまとめたクラス'
     INNERJOIN = 'inner join account on journal.acode = account.rowid'
     SELECTJOU = 'select * from journal'
 
@@ -187,7 +266,7 @@ class kakeibohandler(object):
         return self.select_journal(' ' + (self.INNERJOIN if join else '') + ' where transaction_id=?', (tid,))
 
     def select_journal_by_date(self, date, join=False):
-        return self.select_journal(' ' + (self.INNERJOIN if join else '') + ' where deal_date=?', (date,))
+        return self.select_journal(' ' + (self.INNERJOIN if join else '') + ' where deal_date=? order by deal_date, transaction_id, side', (date,))
 
     # account handling
     def acc_exists(self, aname):
@@ -215,5 +294,11 @@ class kakeibohandler(object):
                     ),
                 anames
                 )
+        return dict(self.cur.fetchall())
+
+    def get_accounts(self):
+        if not self.connected():
+            self.connect(self.db)
+        self.cur.execute('select aname,rowid from account')
         return dict(self.cur.fetchall())
 
