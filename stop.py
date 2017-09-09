@@ -10,4 +10,4 @@ if os.path.isfile(PID):
     os.kill(pid, signal.SIGQUIT)
     os.remove(PID)
 else:
-    Exception('no run.pid file')
+    raise Exception('no run.pid file')
