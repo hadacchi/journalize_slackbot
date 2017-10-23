@@ -1,3 +1,6 @@
 [submodule "plugins/texttables"]
 	path = plugins/texttables
 	url = https://github.com/hadacchi/texttables.git
+[submodule "plugins/sense-on-raspi"]
+	path = plugins/sense-on-raspi
+	url = https://github.com/hadacchi/sense-on-raspi.git
