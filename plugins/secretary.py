@@ -1,21 +1,27 @@
 # coding: utf-8
 
+# my modules
+from texttables.dynamic import writer as tblwriter
+from sense-on-raspi.dbhandler import dbhandler
+
+sys.path.append('..')
+from privatedata import ch     # ch is dictionary from ch name to ch id
+from privatedata import DB     # db filename
+from privatedata import PID    # path to pid file
+from privatedata import PID    # path to pid file
+from privatedata import dbattr # mysql connection settings
+
 import datetime
 import io
 import os
 import re
 import sqlite3
-from texttables.dynamic import writer as tblwriter
 from slackbot.bot import respond_to
 from slackbot.bot import listen_to
 from slackbot.dispatcher import unicode_compact
 from slackbot.dispatcher import Message
 import sys
 
-sys.path.append('..')
-from privatedata import ch      # ch is dictionary from ch name to ch id
-from privatedata import DB  # db filename
-from privatedata import PID # path to pid file
 
 __version__ = '0.2.0'
 __author__  = 'hadacchi'
