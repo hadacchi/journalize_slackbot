@@ -8,7 +8,6 @@ sys.path.append('..')
 from privatedata import ch     # ch is dictionary from ch name to ch id
 from privatedata import DB     # db filename
 from privatedata import PID    # path to pid file
-from privatedata import PID    # path to pid file
 from privatedata import dbattr # mysql connection settings
 
 import datetime
